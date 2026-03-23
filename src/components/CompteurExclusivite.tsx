@@ -3,31 +3,44 @@
 import { useEffect, useState } from "react";
 import { Calendar, Clock } from "lucide-react";
 
+const MOIS_NOMS = [
+  "janvier", "fevrier", "mars", "avril",
+  "mai", "juin", "juillet", "aout",
+  "septembre", "octobre", "novembre", "decembre",
+];
+
 export default function CompteurExclusivite() {
-  const [placesRestantes, setPlacesRestantes] = useState(0);
+  const [placesRestantes, setPlacesRestantes] = useState(8);
+  const [totalSlots, setTotalSlots] = useState(8);
   const [moisActuel, setMoisActuel] = useState("");
   const [urgence, setUrgence] = useState(false);
 
   useEffect(() => {
-    const mois = [
-      "janvier", "fevrier", "mars", "avril",
-      "mai", "juin", "juillet", "aout",
-      "septembre", "octobre", "novembre", "decembre",
-    ];
-
     const now = new Date();
-    setMoisActuel(mois[now.getMonth()]);
+    setMoisActuel(MOIS_NOMS[now.getMonth()]);
 
-    const joursEcoules = now.getDate();
-    const totalPlaces = 8;
-    const placesReservees = Math.min(
-      Math.floor(joursEcoules / 3.5),
-      totalPlaces - 1
-    );
-    const restantes = totalPlaces - placesReservees;
+    const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-    setPlacesRestantes(restantes);
-    setUrgence(restantes <= 3);
+    fetch(`/api/disponibilites?month=${monthStr}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.stats) {
+          setPlacesRestantes(data.stats.placesRestantes);
+          setTotalSlots(data.stats.totalSlots);
+          setUrgence(data.stats.placesRestantes <= 3);
+        }
+      })
+      .catch(() => {
+        // Fallback: calcul local
+        const joursEcoules = now.getDate();
+        const placesReservees = Math.min(
+          Math.floor(joursEcoules / 3.5),
+          7
+        );
+        const restantes = 8 - placesReservees;
+        setPlacesRestantes(restantes);
+        setUrgence(restantes <= 3);
+      });
   }, []);
 
   return (
@@ -41,7 +54,7 @@ export default function CompteurExclusivite() {
         <Calendar size={16} className="text-white/60 shrink-0" />
         <span className="text-white/80 text-xs tracking-widest uppercase">
           Le Chef accepte{" "}
-          <span className="text-white font-bold">8 evenements</span> par mois
+          <span className="text-white font-bold">{totalSlots} evenements</span> par mois
         </span>
       </div>
 

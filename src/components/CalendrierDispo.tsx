@@ -1,19 +1,21 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronLeft, ChevronRight, Check } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { ChevronLeft, ChevronRight, Check, Loader2 } from "lucide-react";
 import FadeIn from "./FadeIn";
 
 type Dispo = "disponible" | "derniere-place" | "complet";
 
-function getDispo(date: Date): Dispo {
-  const day = date.getDay();
-  const dateNum = date.getDate();
+interface SanityDispo {
+  date: string;
+  statut: Dispo;
+}
 
-  if (day === 0 || day === 1) return "complet";
-  if (dateNum % 7 === 0) return "derniere-place";
-  if (dateNum % 3 === 0) return "complet";
-  return "disponible";
+interface DispoStats {
+  totalSlots: number;
+  complets: number;
+  dernieres: number;
+  placesRestantes: number;
 }
 
 const MOIS = [
@@ -30,6 +32,40 @@ export default function CalendrierDispo() {
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [message, setMessage] = useState("");
+  const [dispoMap, setDispoMap] = useState<Record<string, Dispo>>({});
+  const [stats, setStats] = useState<DispoStats>({
+    totalSlots: 8,
+    complets: 0,
+    dernieres: 0,
+    placesRestantes: 8,
+  });
+  const [loading, setLoading] = useState(true);
+
+  const fetchDispos = useCallback(async (month: number, year: number) => {
+    setLoading(true);
+    const monthStr = `${year}-${String(month + 1).padStart(2, "0")}`;
+    try {
+      const res = await fetch(`/api/disponibilites?month=${monthStr}`);
+      const data = await res.json();
+
+      const map: Record<string, Dispo> = {};
+      (data.dispos || []).forEach((d: SanityDispo) => {
+        map[d.date] = d.statut;
+      });
+      setDispoMap(map);
+
+      if (data.stats) {
+        setStats(data.stats);
+      }
+    } catch {
+      setDispoMap({});
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchDispos(currentMonth, currentYear);
+  }, [currentMonth, currentYear, fetchDispos]);
 
   const firstDay = new Date(currentYear, currentMonth, 1);
   const lastDay = new Date(currentYear, currentMonth + 1, 0);
@@ -39,6 +75,11 @@ export default function CalendrierDispo() {
   for (let i = 0; i < startDayOfWeek; i++) days.push(null);
   for (let i = 1; i <= lastDay.getDate(); i++) {
     days.push(new Date(currentYear, currentMonth, i));
+  }
+
+  function getDispoForDate(date: Date): Dispo {
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    return dispoMap[key] || "disponible";
   }
 
   const prevMonth = () => {
@@ -60,12 +101,12 @@ export default function CalendrierDispo() {
   };
 
   const handleSelect = (date: Date) => {
-    const dispo = getDispo(date);
+    const dispo = getDispoForDate(date);
     if (dispo === "complet") return;
     setSelectedDate(date);
     const messages: Record<string, string> = {
       disponible: "Le Chef est disponible - Reservez avant qu'il ne parte !",
-      "derniere-place": "Derniere disponibilite ce soir - Plus que 1 place",
+      "derniere-place": "Derniere disponibilite - Plus que 1 place",
     };
     setMessage(messages[dispo]);
   };
@@ -101,10 +142,12 @@ export default function CalendrierDispo() {
             </h2>
             <p className="text-on-surface-variant text-sm">
               Le Chef accepte{" "}
-              <span className="font-bold text-primary">8 evenements par mois</span>
+              <span className="font-bold text-primary">
+                {stats.totalSlots} evenements par mois
+              </span>
               {" "}/{" "}
               <span className="font-bold text-primary">
-                {8 - (today.getDate() % 4)} places restantes
+                {stats.placesRestantes} place{stats.placesRestantes > 1 ? "s" : ""} restante{stats.placesRestantes > 1 ? "s" : ""}
               </span>{" "}
               en {MOIS[currentMonth]}
             </p>
@@ -121,8 +164,9 @@ export default function CalendrierDispo() {
               >
                 <ChevronLeft size={20} className="text-on-surface-variant" />
               </button>
-              <h3 className="font-serif text-xl text-on-surface">
+              <h3 className="font-serif text-xl text-on-surface flex items-center gap-3">
                 {MOIS[currentMonth]} {currentYear}
+                {loading && <Loader2 size={16} className="animate-spin text-primary" />}
               </h3>
               <button
                 onClick={nextMonth}
@@ -151,14 +195,9 @@ export default function CalendrierDispo() {
 
                 const isPast =
                   date <
-                  new Date(
-                    today.getFullYear(),
-                    today.getMonth(),
-                    today.getDate()
-                  );
-                const dispo = isPast ? "complet" : getDispo(date);
-                const isSelected =
-                  selectedDate?.getTime() === date.getTime();
+                  new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                const dispo = isPast ? "complet" : getDispoForDate(date);
+                const isSelected = selectedDate?.getTime() === date.getTime();
                 const colors = dispoColors[dispo];
 
                 return (
